@@ -24,6 +24,18 @@ class BaseCaseExpression(ExpressionNode):
     def init_values(self, values):
         raise NotImplementedError("Subclasses must implement init_values()")
 
+    def get_source_expressions(self):
+        source_expressions = [value for condition, value in self.values]
+        if self.default is not None:
+            source_expressions.append(self.default)
+        return source_expressions
+
+    def set_source_expressions(self, exprs):
+        if self.default is not None:
+            self.default = exprs[-1]
+            exprs = exprs[:-1]
+        self.values = [(condition, new_value) for new_value, (condition, value) in zip(exprs, self.values)]
+
     def resolve_expression(self, query=None, allow_joins=True, reuse=None, summarize=False):
         c = self.copy()
         c.is_summary = summarize

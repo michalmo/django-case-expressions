@@ -151,8 +151,7 @@ class CaseExpressionIntegrationTests(DjangoTestCase):
                 'integer',
                 [(1, F('integer') + 1),
                  (2, F('integer') + 3)],
-                default=F('integer'),
-                output_field=models.IntegerField())).order_by('pk'),
+                default=F('integer'))).order_by('pk'),
             [(1, 2), (2, 5), (3, 3)],
             transform=attrgetter('id', 'f_test'))
 
@@ -187,16 +186,13 @@ class CaseExpressionIntegrationTests(DjangoTestCase):
             CaseTestModel.objects.aggregate(
                 one=models.Sum(SimpleCase(
                     'integer', [(1, F('integer'))],
-                    default=0,
-                    output_field=models.IntegerField())),
+                    default=0)),
                 two=models.Sum(SimpleCase(
                     'integer', [(2, F('integer') - 1)],
-                    default=0,
-                    output_field=models.IntegerField())),
+                    default=0)),
                 three=models.Sum(SimpleCase(
                     'integer', [(3, F('integer') + 1)],
-                    default=0,
-                    output_field=models.IntegerField()))
+                    default=0))
                 ),
             {'one': 1, 'two': 2, 'three': 12})
 
@@ -216,8 +212,7 @@ class CaseExpressionIntegrationTests(DjangoTestCase):
         CaseTestModel.objects.update(
             integer=Case([(Q(integer__lt=2), F('integer') * -2),
                           (Q(integer__gt=2), F('integer') * 2)],
-                         default=0,
-                         output_field=CaseTestModel._meta.get_field('integer')))
+                         default=0))
 
         self.assertQuerysetEqual(
             CaseTestModel.objects.all().order_by('pk'),
