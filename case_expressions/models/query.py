@@ -25,13 +25,16 @@ class BulkUpdateQuerySet(models.QuerySet):
             return objs
         if any(o.pk is None for o in objs):
             raise ValueError("Can't bulk update instances without a pk")
-        self._for_write = True
         non_pk_fields = [f for f in self.model._meta.local_concrete_fields if not f.primary_key]
-        if update_fields:
+        if update_fields is not None:
+            update_fields = frozenset(update_fields)
             non_pk_fields = [f for f in non_pk_fields
                              if f.name in update_fields or f.attname in update_fields]
-        with transaction.atomic(using=self.db, savepoint=False):
-            self._batched_update(objs, non_pk_fields, batch_size)
+        if non_pk_fields:
+            self._for_write = True
+            with transaction.atomic(using=self.db, savepoint=False):
+                self._batched_update(objs, non_pk_fields, batch_size)
+        return objs
 
     def _update_many(self, objs, fields, using=None):
         """

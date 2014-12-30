@@ -5,12 +5,15 @@ from unittest import TestCase, skip
 
 from django.db import connection, models
 from django.db.backends.sqlite3.base import DatabaseWrapper
-from django.db.models import F, Q, CharField
+from django.db.models import F, Q, Value, CharField
+from django.db.models.expressions import SearchedCase, SimpleCase
 from django.db.models.sql.query import Query
 from django.db.models.sql.compiler import SQLCompiler
 from django.test import TestCase as DjangoTestCase
+
+from ..models.expressions import UpdateModelList
 from .models import CaseTestModel, BulkUpdateQuerySetTestModel
-from ..models.expressions import Case, SimpleCase, UpdateModelList
+from .case_t import CaseExpressionTests as CaseExpressionIntegrationTests
 
 
 class CaseExpressionTestCase(TestCase):
@@ -26,13 +29,13 @@ class CaseExpressionTestCase(TestCase):
         self.assertEqual(params, expected_params, "The 'as_sql' method did not return the expected params.")
 
 
-class CaseUnitTests(CaseExpressionTestCase):
+class SearchedCaseUnitTests(CaseExpressionTestCase):
     def test_values(self):
         self.assertGeneratedSqlEqual(
-            Case([(Q(integer__gt=0), "positive"),
-                  (Q(integer__lt=0), "negative"),
-                  (Q(integer=0), "zero")],
-                 output_field=CharField()),
+            SearchedCase([(Q(integer__gt=0), Value('positive')),
+                          (Q(integer__lt=0), Value('negative')),
+                          (Q(integer=0), Value('zero'))],
+                         output_field=CharField()),
 
             'CASE WHEN "tests_casetestmodel"."integer" > %s THEN %s '
             'WHEN "tests_casetestmodel"."integer" < %s THEN %s '
@@ -42,10 +45,10 @@ class CaseUnitTests(CaseExpressionTestCase):
 
     def test_values_with_default(self):
         self.assertGeneratedSqlEqual(
-            Case([(Q(integer__gt=0), "positive"),
-                  (Q(integer__lt=0), "negative")],
-                 default="zero",
-                 output_field=CharField()),
+            SearchedCase([(Q(integer__gt=0), Value('positive')),
+                          (Q(integer__lt=0), Value('negative'))],
+                         default=Value('zero'),
+                         output_field=CharField()),
 
             'CASE WHEN "tests_casetestmodel"."integer" > %s THEN %s '
             'WHEN "tests_casetestmodel"."integer" < %s THEN %s '
@@ -54,18 +57,19 @@ class CaseUnitTests(CaseExpressionTestCase):
             [0, 'positive', 0, 'negative', 'zero'])
 
     def test_empty_values(self):
-        self.assertGeneratedSqlEqual(Case(), 'NULL', ())
+        self.assertGeneratedSqlEqual(SearchedCase(), 'NULL', ())
 
     def test_empty_values_with_default(self):
         self.assertGeneratedSqlEqual(
-            Case(default="I cannot count", output_field=CharField()),
+            SearchedCase(default=Value('I cannot count'), output_field=CharField()),
             '%s', ['I cannot count'])
 
 
 class SimpleCaseUnitTests(CaseExpressionTestCase):
     def test_values(self):
         self.assertGeneratedSqlEqual(
-            SimpleCase('integer', [(1, "one"), (2, "two"), (3, "three")],
+            SimpleCase('integer',
+                       [(Value(1), Value('one')), (Value(2), Value('two')), (Value(3), Value('three'))],
                        output_field=CharField()),
 
             'CASE "tests_casetestmodel"."integer" '
@@ -75,8 +79,8 @@ class SimpleCaseUnitTests(CaseExpressionTestCase):
 
     def test_values_with_default(self):
         self.assertGeneratedSqlEqual(
-            SimpleCase('integer', [(1, "one"), (2, "two")],
-                       default='I cannot count that high',
+            SimpleCase('integer', [(Value(1), Value('one')), (Value(2), Value('two'))],
+                       default=Value('I cannot count that high'),
                        output_field=CharField()),
 
             'CASE "tests_casetestmodel"."integer" '
@@ -92,7 +96,7 @@ class SimpleCaseUnitTests(CaseExpressionTestCase):
 
     def test_empty_values_with_default(self):
         self.assertGeneratedSqlEqual(
-            SimpleCase('integer', default='I cannot count', output_field=CharField()),
+            SimpleCase('integer', default=Value('I cannot count'), output_field=CharField()),
             '%s', ['I cannot count'])
 
 
@@ -130,101 +134,12 @@ class UpdateFieldListUnitTests(CaseExpressionTestCase):
             'NULL', ())
 
 
-class CaseExpressionIntegrationTests(DjangoTestCase):
-    def setUp(self):
-        self.model1 = CaseTestModel.objects.create(integer=1, string='1')
-        self.model2 = CaseTestModel.objects.create(integer=2, string='2')
-        self.model3 = CaseTestModel.objects.create(integer=3, string='3')
-
-    def test_annotate(self):
-        self.assertQuerysetEqual(
-            CaseTestModel.objects.annotate(text=SimpleCase(
-                'integer', [(1, 'one'), (2, 'two')],
-                default='other',
-                output_field=models.CharField())).order_by('pk'),
-            [(1, 'one'), (2, 'two'), (3, 'other')],
-            transform=attrgetter('id', 'text'))
-
-    def test_annotate_with_F_object(self):
-        self.assertQuerysetEqual(
-            CaseTestModel.objects.annotate(f_test=SimpleCase(
-                'integer',
-                [(1, F('integer') + 1),
-                 (2, F('integer') + 3)],
-                default=F('integer'))).order_by('pk'),
-            [(1, 2), (2, 5), (3, 3)],
-            transform=attrgetter('id', 'f_test'))
-
-    def test_aggregate(self):
-        CaseTestModel.objects.create(integer=2, string='2')
-        CaseTestModel.objects.create(integer=3, string='3')
-        CaseTestModel.objects.create(integer=3, string='3')
-
-        self.assertEqual(
-            CaseTestModel.objects.aggregate(
-                one=models.Sum(SimpleCase(
-                    'integer', [(1, 1)],
-                    default=0,
-                    output_field=models.IntegerField())),
-                two=models.Sum(SimpleCase(
-                    'integer', [(2, 1)],
-                    default=0,
-                    output_field=models.IntegerField())),
-                three=models.Sum(SimpleCase(
-                    'integer', [(3, 1)],
-                    default=0,
-                    output_field=models.IntegerField()))
-                ),
-            {'one': 1, 'two': 2, 'three': 3})
-
-    def test_aggregate_with_F_object(self):
-        CaseTestModel.objects.create(integer=2, string='2')
-        CaseTestModel.objects.create(integer=3, string='3')
-        CaseTestModel.objects.create(integer=3, string='3')
-
-        self.assertEqual(
-            CaseTestModel.objects.aggregate(
-                one=models.Sum(SimpleCase(
-                    'integer', [(1, F('integer'))],
-                    default=0)),
-                two=models.Sum(SimpleCase(
-                    'integer', [(2, F('integer') - 1)],
-                    default=0)),
-                three=models.Sum(SimpleCase(
-                    'integer', [(3, F('integer') + 1)],
-                    default=0))
-                ),
-            {'one': 1, 'two': 2, 'three': 12})
-
-    def test_update(self):
-        CaseTestModel.objects.update(
-            string=Case([(Q(integer__lt=2), 'less than 2'),
-                         (Q(integer__gt=2), 'greater than 2')],
-                        default='equal to 2',
-                        output_field=CaseTestModel._meta.get_field('string')))
-
-        self.assertQuerysetEqual(
-            CaseTestModel.objects.all().order_by('pk'),
-            [(1, 'less than 2'), (2, 'equal to 2'), (3, 'greater than 2')],
-            transform=attrgetter('id', 'string'))
-
-    def test_update_with_F_object(self):
-        CaseTestModel.objects.update(
-            integer=Case([(Q(integer__lt=2), F('integer') * -2),
-                          (Q(integer__gt=2), F('integer') * 2)],
-                         default=0))
-
-        self.assertQuerysetEqual(
-            CaseTestModel.objects.all().order_by('pk'),
-            [(1, -2), (2, 0), (3, 6)],
-            transform=attrgetter('id', 'integer'))
-
-
 class BulkUpdateQuerySetIntegrationTests(DjangoTestCase):
-    def setUp(self):
-        self.model1 = BulkUpdateQuerySetTestModel.objects.create(integer=1, string='1')
-        self.model2 = BulkUpdateQuerySetTestModel.objects.create(integer=2, string='2')
-        self.model3 = BulkUpdateQuerySetTestModel.objects.create(integer=3, string='3')
+    @classmethod
+    def setUpTestData(cls):
+        cls.model1 = BulkUpdateQuerySetTestModel.objects.create(integer=1, string='1')
+        cls.model2 = BulkUpdateQuerySetTestModel.objects.create(integer=2, string='2')
+        cls.model3 = BulkUpdateQuerySetTestModel.objects.create(integer=3, string='3')
 
     def test_bulk_update_a_single_field(self):
         self.model1.integer = 0
