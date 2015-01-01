@@ -13,7 +13,8 @@ from django.test import TestCase as DjangoTestCase
 
 from ..models.expressions import UpdateModelList
 from .models import CaseTestModel, BulkUpdateQuerySetTestModel
-from .case_t import CaseExpressionTests as CaseExpressionIntegrationTests
+from .case_t import SimpleCaseExpressionTests as SimpleCaseExpressionIntegrationTests, \
+    SearchedCaseExpressionTests as SearchedCaseExpressionIntegrationTests
 
 
 class CaseExpressionTestCase(TestCase):
