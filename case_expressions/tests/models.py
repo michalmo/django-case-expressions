@@ -4,7 +4,7 @@ from django.db import models
 from django.utils.encoding import python_2_unicode_compatible
 
 from ..models.query import BulkUpdateQuerySet
-from .case_m import CaseTestModel
+from .case_m import CaseTestModel, FKCaseTestModel
 
 
 @python_2_unicode_compatible
