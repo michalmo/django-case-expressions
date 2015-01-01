@@ -18,12 +18,12 @@ class UpdateModelList(ExpressionNode):
 
         # bypass resolving all these values, since it slows down the query
         # generation by a factor of two
-        def create_resolved_case_tuple(obj, attname=self.output_field.attname):
+        def create_resolved_case_tuple(obj, output_field=self.output_field, attname=self.output_field.attname):
             value = getattr(obj, attname)
             if hasattr(value, 'resolve_expression'):
                 return Value(obj.pk), value.resolve_expression(query, allow_joins, reuse, summarize)
             else:
-                return Value(obj.pk), Value(value)
+                return Value(obj.pk), Value(value, output_field=output_field)
 
         c.cases = list(map(create_resolved_case_tuple, self.objects))
         return c
